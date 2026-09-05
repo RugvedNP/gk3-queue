@@ -1,0 +1,39 @@
+# Copy to config.toml and fill in. config.toml is gitignored - it holds keys.
+
+[printer]
+# From the printer's touchscreen: Settings -> File Sharing.
+# Give it a DHCP reservation in your router so it never moves.
+ip = "192.0.2.42"   # example address; use your printer's
+
+# Where macOS mounts the printer's SMB share. The daemon copies sliced files
+# here to stage them. Mount it once in Finder (Cmd-K, smb://<printer-ip>) and
+# tick "Remember this password in my keychain" so it auto-remounts.
+smb_mount = "/Volumes/GK3"
+
+# Set false if gk3_probe.py found no control channel. The daemon will still
+# stage files automatically; you just press Print on the touchscreen, then tap
+# "I started it" on the phone page.
+remote_start = true
+
+[watch]
+# Drop sliced files here (point your slicer's output at it) and they get
+# queued automatically.
+inbox = "/Users/YOU/GK3-Inbox"
+
+# How many jobs to pre-copy to the printer ahead of time. The printer has
+# roughly 7 GB internal storage, so keep this modest for 16K files.
+stage_ahead = 2
+
+[supabase]
+url = "https://YOURPROJECT.supabase.co"
+# The anon/public key, not the service_role key.
+anon_key = "eyJ..."
+
+[preflight]
+enabled = true
+# Optional plain-English verdict from Claude on top of the mechanical diff.
+# Needs ANTHROPIC_API_KEY in the environment, or an `ant auth login` profile.
+use_claude = true
+# Baselines are learned: the first accepted job for a resin becomes its
+# reference profile. Delete a resin's entry here to re-learn it.
+baselines = "baselines.json"

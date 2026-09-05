@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f12">
+<title>GK3 Queue</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #14171a; --dim: #6b7280;
+    --line: #e3e6ea; --accent: #2563eb; --ok: #15803d; --warn: #b45309;
+    --block: #b91c1c; --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0f12; --card: #171a1f; --ink: #e8eaed; --dim: #9aa3ad;
+      --line: #262b33; --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24;
+      --block: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 96px);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 620px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 19px; margin: 4px 0 14px; letter-spacing: -0.01em; }
+  h1 small { color: var(--dim); font-weight: 400; font-size: 13px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 14px; margin-bottom: 12px;
+  }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .grow { flex: 1; min-width: 0; }
+  .ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dim { color: var(--dim); font-size: 13px; }
+
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.printing { background: var(--accent); animation: pulse 1.6s infinite; }
+  .dot.idle { background: var(--ok); }
+  .dot.manual { background: var(--warn); }
+  .dot.unreachable, .dot.unknown, .dot.stale { background: var(--block); }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  .bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.4s; }
+
+  button {
+    font: inherit; font-weight: 600; color: var(--ink); cursor: pointer;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 12px;
+  }
+  button:active { transform: scale(0.98); }
+  button[disabled] { opacity: 0.4; cursor: not-allowed; }
+  .icon { padding: 6px 10px; font-size: 15px; }
+
+  .job { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .job:last-child { border-bottom: 0; padding-bottom: 0; }
+  .job:first-child { padding-top: 0; }
+  .name { font-weight: 600; }
+
+  .tag {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; padding: 2px 7px; border-radius: 5px;
+    border: 1px solid currentColor; flex: none;
+  }
+  .tag.queued   { color: var(--dim); }
+  .tag.staged   { color: var(--ok); }
+  .tag.printing { color: var(--accent); }
+  .tag.done     { color: var(--dim); }
+  .tag.failed, .tag.block { color: var(--block); }
+  .tag.warn     { color: var(--warn); }
+  .tag.ok, .tag.learned { color: var(--ok); }
+
+  details.pf { margin-top: 8px; }
+  details.pf summary { cursor: pointer; font-size: 13px; color: var(--dim); }
+  details.pf pre {
+    white-space: pre-wrap; font-size: 13px; margin: 8px 0 0;
+    padding: 10px; background: var(--bg); border-radius: 8px;
+    border: 1px solid var(--line);
+  }
+
+  .dock {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--card); border-top: 1px solid var(--line);
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+  .dock .wrap { padding: 0; }
+  .go {
+    width: 100%; padding: 15px; font-size: 16px; border: 0;
+    background: var(--accent); color: #fff; border-radius: 12px;
+  }
+  .go[disabled] { background: var(--line); color: var(--dim); }
+  .hint { text-align: center; font-size: 12.5px; color: var(--dim); margin-top: 8px; }
+  .empty { text-align: center; color: var(--dim); padding: 26px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>GK3 Queue <small id="heartbeat"></small></h1>
+  <div class="card" id="status"></div>
+  <div class="card" id="queue"><div class="empty">Loading…</div></div>
+  <div class="card" id="historyCard" hidden>
+    <div class="dim" style="margin-bottom:8px">Recent</div>
+    <div id="history"></div>
+  </div>
+</div>
+
+<div class="dock"><div class="wrap">
+  <button class="go" id="go" disabled>Loading…</button>
+  <div class="hint" id="hint"></div>
+</div></div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+// ---- fill these in -------------------------------------------------------
+const SUPABASE_URL = "https://YOURPROJECT.supabase.co";
+const SUPABASE_ANON_KEY = "eyJ...";
+// --------------------------------------------------------------------------
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = (id) => document.getElementById(id);
+
+const ACTIVE = ["queued", "staged", "printing"];
+let jobs = [];
+let printer = {};
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function load() {
+  const [j, p] = await Promise.all([
+    sb.from("jobs").select("*").order("position").limit(100),
+    sb.from("printer").select("*").eq("id", 1).single(),
+  ]);
+  if (!j.error) jobs = j.data;
+  if (!p.error) printer = p.data;
+  render();
+}
+
+// Live updates - no polling from the phone.
+sb.channel("queue")
+  .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, load)
+  .on("postgres_changes", { event: "*", schema: "public", table: "printer" }, load)
+  .subscribe();
+
+function daemonStale() {
+  if (!printer.daemon_seen_at) return true;
+  return Date.now() - new Date(printer.daemon_seen_at).getTime() > 60_000;
+}
+
+function renderStatus() {
+  const stale = daemonStale();
+  const state = stale ? "stale" : (printer.state || "unknown");
+  const label = stale ? "daemon not responding" : state;
+  const pct = Number(printer.progress_pct) || 0;
+  const layers = printer.layer != null && printer.total_layers
+    ? `layer ${printer.layer} / ${printer.total_layers}` : "";
+
+  $("heartbeat").textContent = stale ? "· offline" : "";
+  $("status").innerHTML = `
+    <div class="row">
+      <span class="dot ${esc(state)}"></span>
+      <div class="grow"><b>${esc(label)}</b>
+        <div class="dim">${esc(layers) || (printer.plate_clear
+          ? "plate clear, ready for the next job"
+          : "plate needs clearing before the next job")}</div>
+      </div>
+      ${pct ? `<div class="dim">${pct.toFixed(0)}%</div>` : ""}
+    </div>
+    ${pct ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}
+    ${stale ? `<div class="dim" style="margin-top:10px">
+      The Mac may be asleep or gk3d has stopped. Nothing will stage or start
+      until it is back.</div>` : ""}`;
+}
+
+function jobRow(job, compact) {
+  const pf = job.preflight_status;
+  const pfTag = pf && pf !== "skipped"
+    ? `<span class="tag ${esc(pf)}">${esc(pf)}</span>` : "";
+  const notes = job.preflight_notes && !compact
+    ? `<details class="pf"><summary>Preflight</summary><pre>${esc(job.preflight_notes)}</pre></details>` : "";
+  const mb = job.file_bytes ? (job.file_bytes / 1e6).toFixed(0) + " MB" : "";
+
+  return `<div class="job" data-id="${job.id}">
+    <div class="row">
+      <div class="grow">
+        <div class="name ellip">${esc(job.name)}</div>
+        <div class="dim ellip">${[esc(job.resin || "resin not set"), mb]
+          .filter(Boolean).join(" · ")}</div>
+      </div>
+      ${pfTag}
+      <span class="tag ${esc(job.state)}">${esc(job.state)}</span>
+      ${compact ? "" : `
+        <button class="icon" data-act="up"     title="Move up">↑</button>
+        <button class="icon" data-act="cancel" title="Remove">✕</button>`}
+    </div>
+    ${job.error ? `<div class="dim" style="color:var(--block);margin-top:6px">${esc(job.error)}</div>` : ""}
+    ${notes}
+  </div>`;
+}
+
+function render() {
+  renderStatus();
+
+  const active = jobs.filter((j) => ACTIVE.includes(j.state));
+  $("queue").innerHTML = active.length
+    ? active.map((j) => jobRow(j, false)).join("")
+    : `<div class="empty">Queue is empty.<br>Drop a sliced file in the inbox folder.</div>`;
+
+  const recent = jobs.filter((j) => !ACTIVE.includes(j.state)).slice(-6).reverse();
+  $("historyCard").hidden = recent.length === 0;
+  $("history").innerHTML = recent.map((j) => jobRow(j, true)).join("");
+
+  renderDock(active);
+}
+
+function renderDock(active) {
+  const go = $("go");
+  const hint = $("hint");
+  const printing = active.find((j) => j.state === "printing");
+  const next = active.find((j) => j.state === "staged");
+  const manual = printer.state === "manual";
+
+  go.disabled = false;
+  delete go.dataset.act;
+
+  if (printing) {
+    go.textContent = manual ? "Mark this print finished" : "Printing…";
+    go.disabled = !manual;
+    go.dataset.act = "finish";
+    hint.textContent = manual
+      ? "No control channel, so the daemon can't tell when it ends."
+      : "The daemon will close this out on its own.";
+    return;
+  }
+  if (!next) {
+    go.textContent = "Nothing staged yet";
+    go.disabled = true;
+    hint.textContent = active.length
+      ? "Files are still copying to the printer."
+      : "";
+    return;
+  }
+  if (!printer.plate_clear) {
+    go.textContent = "Plate is clear — arm next job";
+    go.dataset.act = "arm";
+    hint.textContent = `Next up: ${next.name}. Confirm the build plate is empty.`;
+    return;
+  }
+  if (manual) {
+    go.textContent = "I pressed Print on the printer";
+    go.dataset.act = "started";
+    hint.textContent = `Start ${next.printer_filename} on the touchscreen, then tap this.`;
+    return;
+  }
+  go.textContent = "Armed — starting shortly";
+  go.disabled = true;
+  hint.textContent = "The daemon starts it within a few seconds.";
+}
+
+// ---- actions -------------------------------------------------------------
+
+$("go").addEventListener("click", async (event) => {
+  const act = event.currentTarget.dataset.act;
+  const active = jobs.filter((j) => ACTIVE.includes(j.state));
+  const next = active.find((j) => j.state === "staged");
+  const printing = active.find((j) => j.state === "printing");
+
+  if (act === "arm") {
+    await sb.from("printer").update({ plate_clear: true }).eq("id", 1);
+  } else if (act === "started" && next) {
+    await sb.from("jobs").update({
+      state: "printing", started_at: new Date().toISOString(),
+    }).eq("id", next.id);
+    await sb.from("printer").update({
+      plate_clear: false, current_job_id: next.id,
+    }).eq("id", 1);
+  } else if (act === "finish" && printing) {
+    await sb.from("jobs").update({
+      state: "done", finished_at: new Date().toISOString(),
+    }).eq("id", printing.id);
+    await sb.from("printer").update({
+      plate_clear: false, current_job_id: null,
+    }).eq("id", 1);
+  }
+  load();
+});
+
+$("queue").addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-act]");
+  if (!button) return;
+  const id = button.closest(".job").dataset.id;
+  const act = button.dataset.act;
+
+  if (act === "cancel") {
+    if (!confirm("Remove this job from the queue?")) return;
+    await sb.from("jobs").update({ state: "canceled" }).eq("id", id);
+  } else if (act === "up") {
+    // Positions are floats, so moving up means taking a value between the two
+    // jobs above. No renumbering needed.
+    const active = jobs.filter((j) => ACTIVE.includes(j.state));
+    const at = active.findIndex((j) => j.id === id);
+    if (at <= 0) return;
+    const above = active[at - 1];
+    const twoAbove = active[at - 2];
+    const position = twoAbove
+      ? (Number(above.position) + Number(twoAbove.position)) / 2
+      : Number(above.position) - 1;
+    await sb.from("jobs").update({ position }).eq("id", id);
+  }
+  load();
+});
+
+load();
+setInterval(renderStatus, 15_000);   // keep the stale-daemon warning honest
+</script>
+</body>
+</html>

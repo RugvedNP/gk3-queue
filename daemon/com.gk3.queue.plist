@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent for gk3d.
+
+  Install:
+    1. Replace every YOU with your macOS username and fix the python path.
+    2. cp com.gk3.queue.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.gk3.queue.plist
+    4. tail -f /tmp/gk3d.log
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.gk3.queue.plist
+
+  Note on sleep: caffeinate -is keeps the Mac from idle-sleeping while the
+  daemon runs, but it does NOT override lid-close sleep. If this MacBook lives
+  with its lid shut, either keep it on power with an external display attached
+  (clamshell), or leave the lid open.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gk3.queue</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-is</string>
+    <string>/Users/YOU/gk3-queue/daemon/.venv/bin/python</string>
+    <string>/Users/YOU/gk3-queue/daemon/gk3d.py</string>
+    <string>--config</string>
+    <string>/Users/YOU/gk3-queue/daemon/config.toml</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/YOU/gk3-queue/daemon</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/gk3d.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/gk3d.err</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Only needed if preflight.use_claude = true. -->
+    <key>ANTHROPIC_API_KEY</key>
+    <string>sk-ant-...</string>
+  </dict>
+</dict>
+</plist>
