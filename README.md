@@ -1,5 +1,7 @@
 # GK3 print queue
 
+![GK3 print queue: phone page, Supabase queue, Mac daemon, and the GK3 on your LAN](docs/social-card.png)
+
 Queue prints for a UniFormation GK3 from your phone. No USB stick walking.
 
 The printer joins your LAN through its USB WiFi dongle. A small daemon on the
